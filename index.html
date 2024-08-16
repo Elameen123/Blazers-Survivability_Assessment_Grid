@@ -125,70 +125,89 @@ async function analyzeImageWithAI(imageUrl) {
     return prediction.reduce((max, current) => current.probability > max.probability ? current : max);
 }
 
-// Function to analyze unanalyzed samples
 async function analyzeUnanalyzedSamples() {
+    const auth = getAuth();
+    const email = "your-email@example.com"; // Replace with the actual user email
+    const password = "your-password"; // Replace with the actual user password
+
     try {
-        const samplesRef = dbRef(database, 'Samples'); // Correct reference to 'Samples' node
-        const snapshot = await get(samplesRef);
-        console.log(snapshot);
-        if (snapshot.exists()) {
-            const samples = snapshot.val();
-            for (const key in samples) {
-                if (samples.hasOwnProperty(key)) {
-                    const sample = samples[key];
+        // Authenticate the user first
+        await signInWithEmailAndPassword(auth, email, password);
 
-                    // Check if the sample has already been analyzed
-                    if (!sample.hasOwnProperty('type') || !sample.hasOwnProperty('life_support_percentage')) {
-                        const result = await analyzeImageWithAI(sample.image);
-                        const imageName = result.className.toLowerCase();
+        // Fetch samples from Firebase
+        const samples = await fetchSamplesFromFirebase();
 
-                        // Update the sample in the database with the analysis results
-                        const updateData = {
-                            type: imageName
-                        };
-                        await update(ref(database, `Samples/${key}`), updateData);
-                    }
+        // Proceed with analyzing unanalyzed samples
+        for (const key in samples) {
+            if (samples.hasOwnProperty(key)) {
+                const sample = samples[key];
+
+                // Check if the sample has already been analyzed
+                if (!sample.hasOwnProperty('type') || !sample.hasOwnProperty('life_support_percentage')) {
+                    const result = await analyzeImageWithAI(sample.image);
+                    const imageName = result.className.toLowerCase();
+
+                    // Update the sample in the database with the analysis results
+                    const updateData = {
+                        type: imageName
+                    };
+                    await update(ref(database, `Samples/${key}`), updateData);
                 }
             }
-        } else {
-            console.error("No data available for analysis");
         }
     } catch (error) {
-        console.error("Error analyzing samples:", error);
+        console.error("Error during authentication or analyzing samples:", error);
     }
 }
 
-// Function to fetch sample dataset from Firebase
 async function fetchSamplesFromFirebase() {
-    const samplesRef = dbRef(database, 'Samples');
+    const auth = getAuth();
+    const email = "your-email@example.com"; // Replace with the actual user email
+    const password = "your-password"; // Replace with the actual user password
+
     try {
+        // Authenticate the user first
+        await signInWithEmailAndPassword(auth, email, password);
+
+        // Proceed with fetching samples
+        const samplesRef = dbRef(database, 'Samples');
         const samplesSnapshot = await get(samplesRef);
+
         if (!samplesSnapshot.exists()) {
             console.log('No samples found');
             return [];
         }
         return samplesSnapshot.val();
     } catch (error) {
-        console.error('Error fetching samples:', error);
+        console.error('Error during authentication or fetching samples:', error);
         return [];
     }
 }
 
-// Function to fetch dataset from Firebase
 async function fetchDatasetFromFirebase() {
-    const datasetRef = dbRef(database, 'Dataset');
+    const auth = getAuth();
+    const email = "your-email@example.com"; // Replace with the actual user email
+    const password = "your-password"; // Replace with the actual user password
+
     try {
+        // Authenticate the user first
+        await signInWithEmailAndPassword(auth, email, password);
+
+        // Proceed with fetching dataset
+        const datasetRef = dbRef(database, 'Dataset');
         const datasetSnapshot = await get(datasetRef);
+
         if (!datasetSnapshot.exists()) {
             console.log('No dataset found');
             return [];
         }
         return datasetSnapshot.val();
     } catch (error) {
-        console.error('Error fetching dataset:', error);
+        console.error('Error during authentication or fetching dataset:', error);
         return [];
     }
 }
+
 
 // Function to analyze and populate the table
 async function analyzeAndPopulateTable() {
