@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Life Support Potential Grid</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="./index.css" />
+    
+</head>
+<body>
+    <div id="headerContainer">
+        <img src="" alt="blazers_logo" class="logo" id="logo"/>
+        <h2>Survivability Assessment Grid</h2>
+    </div>
+
+    <div id="main">
+        <div id="formMapContainer">
+            <form id="location-form">
+                <div class="location-information">
+                    <div class="location-coordinate-1">
+                        <h4>Research Location</h4>
+                        <input type="text" id="location-lat" name="location" value="6.48547" placeholder="Location Latitude">
+                        <input type="text" id="location-long" name="location"
+                        value="3.85571"
+                        placeholder="Location Longitude">
+                    </div>
+
+                    <div class="location-coordinate-2">
+                        <h4>Study Area</h4>
+                        <input type="text" id="study-lat" name="location"value="6.48550"placeholder="Study_Area-Latitude">
+                        <input type="text" id="study-long" name="location"
+                        value="3.85580"
+                        placeholder="Study_Area-Longitude">
+                    </div>
+                </div>
+                
+                <button id="generateGrid" type="submit">Generate Grid</button>
+            </form>
+    
+            <div id="map"></div>
+        </div>
+
+        <table id="rock-table">
+            <thead>
+                <tr>
+                    <th>Rock Name</th>
+                    <th>Rock Type</th>
+                    <th>Formation Process</th>
+                    <th>Texture</th>
+                    <th>Structure</th>
+                    <th>Habitability Support</th>
+
+                </tr>
+            </thead>
+            <tbody id="table-body">
+            </tbody>
+        </table>    
+        
+    </div>
+
+    
+    <footer>&copy; 2024 Blazers Software Team. All Rights Reserved</footer>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+    import { getStorage, ref, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
+    import { getDatabase, ref as dbRef, child, get, update } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    
+
+
+    // Web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyA6c_4j2Zw33NdlP2jSbIp0ySHGSmpluQ8",
+      authDomain: "blazers-rovers-sample-database.firebaseapp.com",
+      projectId: "blazers-rovers-sample-database",
+      storageBucket: "blazers-rovers-sample-database.appspot.com",
+      messagingSenderId: "464730486363",
+      appId: "1:464730486363:web:78ccfde176cea53e21317e"
+    };
+
+    
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const storage = getStorage(app);
+    const database = getDatabase(app);
+
+    // Constants for email and password
+    const EMAIL = "lanre.mohammed23@gmail.com";
+    const PASSWORD = "Wilmar.jr7";
+
+    // Function to authenticate and display image
+    async function authenticateAndLoadImage() {
+      try {
+        // Sign in with email and password
+        const userCredential = await signInWithEmailAndPassword(auth, EMAIL, PASSWORD);
+        console.log("User signed in:", userCredential.user);
+
+        // Load the logo image after successful login
+        const logoImage = document.querySelector('#logo');
+        const logoRef = ref(storage, 'Blazers-Logo.png');
+        const url = await getDownloadURL(logoRef);
+        logoImage.src = url;
+
+      } catch (error) {
+        console.error("Error signing in:", error);
+        alert("Authentication failed.");
+      }
+    }
+
+    // Call the function to authenticate and load the image
+    authenticateAndLoadImage();
+
+// Function to analyze image using AI model
+async function analyzeImageWithAI(imageUrl) {
+    const model = await tmImage.load(modelURL, metadataURL);
+    const image = new Image();
+    image.src = imageUrl;
+    image.crossOrigin = 'anonymous'; // Ensure cross-origin images can be analyzed
+    await new Promise((resolve) => image.onload = resolve);
+    const prediction = await model.predict(image);
+    return prediction.reduce((max, current) => current.probability > max.probability ? current : max);
+}
+
+// Function to analyze unanalyzed samples
+async function analyzeUnanalyzedSamples() {
+    try {
+        const samplesRef = dbRef(database, 'Samples'); // Correct reference to 'Samples' node
+        const snapshot = await get(samplesRef);
+        console.log(snapshot);
+        if (snapshot.exists()) {
+            const samples = snapshot.val();
+            for (const key in samples) {
+                if (samples.hasOwnProperty(key)) {
+                    const sample = samples[key];
+
+                    // Check if the sample has already been analyzed
+                    if (!sample.hasOwnProperty('type') || !sample.hasOwnProperty('life_support_percentage')) {
+                        const result = await analyzeImageWithAI(sample.image);
+                        const imageName = result.className.toLowerCase();
+
+                        // Update the sample in the database with the analysis results
+                        const updateData = {
+                            type: imageName
+                        };
+                        await update(ref(database, `Samples/${key}`), updateData);
+                    }
+                }
+            }
+        } else {
+            console.error("No data available for analysis");
+        }
+    } catch (error) {
+        console.error("Error analyzing samples:", error);
+    }
+}
+
+// Function to fetch sample dataset from Firebase
+async function fetchSamplesFromFirebase() {
+    const samplesRef = dbRef(database, 'Samples');
+    try {
+        const samplesSnapshot = await get(samplesRef);
+        if (!samplesSnapshot.exists()) {
+            console.log('No samples found');
+            return [];
+        }
+        return samplesSnapshot.val();
+    } catch (error) {
+        console.error('Error fetching samples:', error);
+        return [];
+    }
+}
+
+// Function to fetch dataset from Firebase
+async function fetchDatasetFromFirebase() {
+    const datasetRef = dbRef(database, 'Dataset');
+    try {
+        const datasetSnapshot = await get(datasetRef);
+        if (!datasetSnapshot.exists()) {
+            console.log('No dataset found');
+            return [];
+        }
+        return datasetSnapshot.val();
+    } catch (error) {
+        console.error('Error fetching dataset:', error);
+        return [];
+    }
+}
+
+// Function to analyze and populate the table
+async function analyzeAndPopulateTable() {
+    const samples = await fetchSamplesFromFirebase();
+    const dataset = await fetchDatasetFromFirebase();
+
+    const tableBody = document.getElementById('table-body');
+    tableBody.innerHTML = ''; // Clear the table
+
+    for (const sampleId in samples) {
+        const sample = samples[sampleId];
+        const row = document.createElement('tr');
+        
+        const nameCell = document.createElement('td');
+        nameCell.textContent = sample.image_name;
+        row.appendChild(nameCell);
+        
+        const analysisResultCell = document.createElement('td');
+        analysisResultCell.textContent = sample.type || 'Not Analyzed';
+        row.appendChild(analysisResultCell);
+
+        // Additional Data from Dataset
+        const additionalDataCell = document.createElement('td');
+        if (sample.type) {
+            const matchedData = dataset.find(item => item.type.toLowerCase() === sample.type.toLowerCase());
+            if (matchedData) {
+                const formationCell = document.createElement('td');
+                formationCell.textContent = matchedData.formation_process || 'N/A';
+                row.appendChild(formationCell);
+
+                const textureCell = document.createElement('td');
+                textureCell.textContent = matchedData.texture || 'N/A';
+                row.appendChild(textureCell);
+
+                const structureCell = document.createElement('td');
+                structureCell.textContent = matchedData.structure || 'N/A';
+                row.appendChild(structureCell);
+
+                const lifeSupportCell = document.createElement('td');
+                lifeSupportCell.textContent = matchedData.life_support_potential?.percentage ? `${matchedData.life_support_potential.percentage.toFixed(2)}%` : 'N/A';
+                row.appendChild(lifeSupportCell);
+            } else {
+                additionalDataCell.textContent = 'No Matching Data';
+                row.appendChild(additionalDataCell);
+            }
+        } else {
+            additionalDataCell.textContent = 'No Type';
+            row.appendChild(additionalDataCell);
+        }
+
+        tableBody.appendChild(row);
+    }
+}
+
+// Function to create a map with sample locations
+function createMapWithSamples(samples) {
+    console.log("createMapWithSamples function called");
+
+    // Get the latitude and longitude for PAU and the study area
+    const researchLat = parseFloat(document.getElementById('location-lat').value);
+    const researchLng = parseFloat(document.getElementById('location-long').value);
+    const studyLat = parseFloat(document.getElementById('study-lat').value);
+    const studyLng = parseFloat(document.getElementById('study-long').value);
+
+    // Initialize the map centered on the PAU coordinates
+    const map = L.map('map').setView([researchLat, researchLng], 17);
+
+    // Add a tile layer to the map (OpenStreetMap tiles)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+    }).addTo(map);
+
+    // Add marker for research location
+    L.circle([researchLat, researchLng], {
+        color: 'green',
+        radius: 800 // Adjust radius as needed
+    }).addTo(map)
+        .bindPopup('Research Location')
+        .openPopup();
+
+    // Add marker for study area
+    L.circle([studyLat, studyLng], {
+        color: 'red',
+        radius: 600 // Adjust radius as needed
+    }).addTo(map)
+        .bindPopup('Study Area')
+        .openPopup();
+
+    // Small grid size for each sample location
+    const gridSize = 0.0001;
+
+    // Add markers and small rectangles for each sample location
+    samples.forEach(sample => {
+        if (sample.latitude && sample.longitude) {
+            const lat = parseFloat(sample.latitude);
+            const lng = parseFloat(sample.longitude);
+
+            // Add a small rectangle (grid) around the sample location
+            const bounds = [
+                [lat - gridSize, lng - gridSize],
+                [lat + gridSize, lng + gridSize]
+            ];
+            L.rectangle(bounds, { color: "blue", weight: 1 }).addTo(map)
+                .bindPopup(`Sample: ${sample.image_name}`);
+
+            // Add a marker for the sample location
+            L.marker([lat, lng]).addTo(map)
+                .bindPopup(`Sample: ${sample.image_name}`);
+        }
+    });
+
+    // Fit the map bounds to include all markers and rectangles
+    const allLatLngs = [
+        [researchLat, researchLng],
+        [studyLat, studyLng],
+        ...samples.map(sample => [parseFloat(sample.latitude), parseFloat(sample.longitude)])
+    ];
+    const bounds = L.latLngBounds(allLatLngs);
+    map.fitBounds(bounds);
+
+    map.setView([researchLat, researchLng], 15);
+}
+
+// Event listener for "Generate Grid" button
+document.getElementById('generateGrid').addEventListener('click', async (event) => {
+    event.preventDefault();
+    
+    // Fetch the sample data from Firebase
+    const samples = await fetchSamplesFromFirebase();
+
+    // Create the map with the fetched sample data
+    createMapWithSamples(samples);
+});
+
+
+    // Initialize table and map on page load
+    window.onload = async function() {
+        await analyzeUnanalyzedSamples();
+        await analyzeAndPopulateTable();
+    };
+       
+    </script>
+</body>
+</html>
