@@ -6,6 +6,7 @@
     <title>Life Support Potential Grid</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
     <link rel="stylesheet" href="./index.css" />
     
 </head>
@@ -263,8 +264,90 @@ async function analyzeAndPopulateTable() {
 }
 
 // Function to create a map with sample locations
-function createMapWithSamples(samples) {
+// Function to calculate the Convex Hull using the Gift Wrapping algorithm
+function calculateConvexHull(points) {
+    if (points.length < 3) return points;
+
+    let hull = [];
+
+    // Find the leftmost point
+    let leftMost = points[0];
+    for (let i = 1; i < points.length; i++) {
+        if (points[i][0] < leftMost[0]) {
+            leftMost = points[i];
+        }
+    }
+
+    let currentPoint = leftMost;
+    let endPoint;
+
+    do {
+        hull.push(currentPoint);
+        endPoint = points[0];
+
+        for (let i = 1; i < points.length; i++) {
+            // Check orientation: clockwise or counterclockwise
+            let crossProduct = ((endPoint[0] - currentPoint[0]) * (points[i][1] - currentPoint[1])) -
+                ((endPoint[1] - currentPoint[1]) * (points[i][0] - currentPoint[0]));
+
+            if (endPoint === currentPoint || crossProduct > 0) {
+                endPoint = points[i];
+            }
+        }
+
+        currentPoint = endPoint;
+
+    } while (endPoint !== leftMost);
+
+    return hull;
+}
+
+// Function to simplify the polygon using the Ramer-Douglas-Peucker algorithm
+function simplifyPath(points, tolerance) {
+    if (points.length < 3) return points;
+
+    // Helper function to calculate the perpendicular distance of a point from a line
+    function perpendicularDistance(point, lineStart, lineEnd) {
+        const dx = lineEnd[0] - lineStart[0];
+        const dy = lineEnd[1] - lineStart[1];
+
+        const area = Math.abs(dx * (lineStart[1] - point[1]) - dy * (lineStart[0] - point[0]));
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        return area / length;
+    }
+
+    let dmax = 0;
+    let index = 0;
+
+    for (let i = 1; i < points.length - 1; i++) {
+        const d = perpendicularDistance(points[i], points[0], points[points.length - 1]);
+        if (d > dmax) {
+            index = i;
+            dmax = d;
+        }
+    }
+
+    if (dmax > tolerance) {
+        const recResults1 = simplifyPath(points.slice(0, index + 1), tolerance);
+        const recResults2 = simplifyPath(points.slice(index), tolerance);
+
+        return recResults1.slice(0, -1).concat(recResults2);
+    } else {
+        return [points[0], points[points.length - 1]];
+    }
+}
+
+let map; // Declare map variable globally
+
+// Function to create a map with sample locations
+function createMapWithSamples(samples, dataset) {
     console.log("createMapWithSamples function called");
+
+    // Clear existing map if it exists
+    if (map) {
+        map.remove(); // Remove the existing map instance
+    }
 
     // Get the latitude and longitude for PAU and the study area
     const researchLat = parseFloat(document.getElementById('location-lat').value);
@@ -273,7 +356,7 @@ function createMapWithSamples(samples) {
     const studyLng = parseFloat(document.getElementById('study-long').value);
 
     // Initialize the map centered on the PAU coordinates
-    const map = L.map('map').setView([researchLat, researchLng], 17);
+    map = L.map('map').setView([researchLat, researchLng], 17);
 
     // Add a tile layer to the map (OpenStreetMap tiles)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -282,7 +365,7 @@ function createMapWithSamples(samples) {
 
     // Add marker for research location
     L.circle([researchLat, researchLng], {
-        color: 'green',
+        color: 'rgb(158, 118, 16)',
         radius: 800 // Adjust radius as needed
     }).addTo(map)
         .bindPopup('Research Location')
@@ -290,7 +373,7 @@ function createMapWithSamples(samples) {
 
     // Add marker for study area
     L.circle([studyLat, studyLng], {
-        color: 'red',
+        color: 'navy',
         radius: 600 // Adjust radius as needed
     }).addTo(map)
         .bindPopup('Study Area')
@@ -299,23 +382,36 @@ function createMapWithSamples(samples) {
     // Small grid size for each sample location
     const gridSize = 0.0001;
 
+    // Array to hold lat-lngs for green locations
+    const greenLocations = [];
+
     // Add markers and small rectangles for each sample location
     samples.forEach(sample => {
         if (sample.latitude && sample.longitude) {
             const lat = parseFloat(sample.latitude);
             const lng = parseFloat(sample.longitude);
 
+            // Find the matching dataset object
+            const matchingData = dataset.find(data => data.type.toLowerCase() === sample.type.toLowerCase());
+
+            // Determine rectangle color based on life_support_potential percentage
+            let rectColor = "red";
+            if (matchingData && matchingData.life_support_potential.percentage >= 50) {
+                rectColor = "blue";
+                greenLocations.push([lat, lng]); // Add to green locations
+            }
+
             // Add a small rectangle (grid) around the sample location
             const bounds = [
                 [lat - gridSize, lng - gridSize],
                 [lat + gridSize, lng + gridSize]
             ];
-            L.rectangle(bounds, { color: "blue", weight: 1 }).addTo(map)
-                .bindPopup(`Sample: ${sample.image_name}`);
+            L.rectangle(bounds, { color: rectColor, weight: 1 }).addTo(map)
+                .bindPopup(`${sample.image_name}`);
 
             // Add a marker for the sample location
             L.marker([lat, lng]).addTo(map)
-                .bindPopup(`Sample: ${sample.image_name}`);
+                .bindPopup(`${sample.image_name}`);
         }
     });
 
@@ -328,8 +424,27 @@ function createMapWithSamples(samples) {
     const bounds = L.latLngBounds(allLatLngs);
     map.fitBounds(bounds);
 
-    map.setView([researchLat, researchLng], 15);
+    map.setView([researchLat, researchLng], 16);
+
+    // Create a polygon around the green locations
+    if (greenLocations.length > 0) {
+        // Calculate the Convex Hull for green locations
+        const convexHullPoints = calculateConvexHull(greenLocations);
+    
+        // Simplify the Convex Hull path
+        const simplifiedHull = simplifyPath(convexHullPoints, 0.0001); // Adjust tolerance as needed
+    
+        // Create a polygon from the simplified Convex Hull
+        const polygon = L.polygon(simplifiedHull, { color: 'green', weight: 3 }).addTo(map)
+            .bindPopup('Potential Life-Supporting Area');
+        
+        // Get the coordinates of the polygon
+        const polygonCoords = polygon.getLatLngs();
+        console.log("Coordinates of Potential Life-Supporting Area:", polygonCoords);
+    }
+    
 }
+
 
 // Event listener for "Generate Grid" button
 document.getElementById('generateGrid').addEventListener('click', async (event) => {
@@ -337,9 +452,11 @@ document.getElementById('generateGrid').addEventListener('click', async (event) 
     
     // Fetch the sample data from Firebase
     const samples = await fetchSamplesFromFirebase();
+    const dataset = await fetchDatasetFromFirebase();
+
 
     // Create the map with the fetched sample data
-    createMapWithSamples(samples);
+    createMapWithSamples(samples, dataset);
 });
 
 
