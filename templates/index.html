@@ -1,0 +1,130 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Survivability Assessment Grid</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+    <div id="headerContainer">
+        <img src="../Blazers-Logo.png" alt="blazers_logo" class="logo" id="logo"/>
+        <h2>Survivability Assessment Grid</h2>
+    </div>
+
+    <div id="main">
+        <div id="formMapContainer">
+            <form id="location-form">
+                <div class="location-information">
+                    <div class="location-coordinate-1">
+                        <h4>Research Location</h4>
+                        <input type="text" id="location-lat" name="location" value="6.48547" placeholder="Location Latitude">
+                        <input type="text" id="location-long" name="location" value="3.85571" placeholder="Location Longitude">
+                    </div>
+
+                    <div class="location-coordinate-2">
+                        <h4>Study Area</h4>
+                        <input type="text" id="study-lat" name="location" value="6.48550" placeholder="Study_Area-Latitude">
+                        <input type="text" id="study-long" name="location" value="3.85580" placeholder="Study_Area-Longitude">
+                    </div>
+                </div>
+                
+                <button id="generateGrid" type="submit">Generate Grid</button>
+            </form>
+    
+            <div id="map"></div>
+        </div>
+
+        <table id="rock-table">
+            <thead>
+                <tr>
+                    <th>Rock Name</th>
+                    <th>Rock Type</th>
+                    <th>Formation Process</th>
+                    <th>Texture</th>
+                    <th>Structure</th>
+                    <th>Habitability Support</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+            </tbody>
+        </table>    
+    </div>
+
+    <footer>&copy; 2024 Blazers Software Team. All Rights Reserved</footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // Check authentication immediately when page loads
+        document.addEventListener('DOMContentLoaded', checkAuthentication);
+        
+        async function checkAuthentication() {
+            // Check if already authenticated
+            const authResponse = await fetch('/api/check-auth');
+            const authData = await authResponse.json();
+            
+            if (!authData.authenticated) {
+                // If not authenticated, prompt for organization name
+                const organizationName = prompt("Please enter your organization name:");
+                
+                if (organizationName) {
+                    // Try to login with provided organization name
+                    const loginResponse = await fetch('/api/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ organization: organizationName })
+                    });
+                    
+                    if (!loginResponse.ok) {
+                        alert("Invalid organization name. Access denied.");
+                        // Prompt again after a brief pause
+                        setTimeout(checkAuthentication, 1000);
+                        return;
+                    }
+                } else {
+                    // If user cancels the prompt or enters nothing
+                    alert("Organization name is required for access.");
+                    // Prompt again after a brief pause
+                    setTimeout(checkAuthentication, 1000);
+                    return;
+                }
+            }
+            
+            // If we get here, user is authenticated - continue loading your app
+            loadApplicationData();
+        }
+        
+        async function loadApplicationData() {
+            try {
+                // Your existing code to load application data
+                // This will now work because the user is authenticated
+                const [logoResponse, samplesResponse, datasetResponse] = await Promise.all([
+                    fetch('/api/logo'),
+                    fetch('/api/samples'),
+                    fetch('/api/dataset')
+                ]);
+                
+                if (!logoResponse.ok || !samplesResponse.ok || !datasetResponse.ok) {
+                    throw new Error('Failed to load data');
+                }
+                
+                // Process your responses here
+                console.log('All data loaded successfully');
+                alert("Application loaded successfully!");
+                
+                // Continue with your application initialization
+            } catch (error) {
+                console.error('Error loading application data:', error);
+                console.log("Error loading application data");
+                    alert("Error loading application data. Please refresh the page to try again.");
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-
+/* static/css/styles.css */
 body {
   width: 100vw;
   height: 100vh;
@@ -28,7 +28,6 @@ body {
   height: 100%;
   max-height: 100%;
   overflow-y: auto;
-  
 }
 
 #rock-table th, #rock-table td {
@@ -103,7 +102,6 @@ body {
 .location-coordinate-1 input, .location-coordinate-2 input {
   background-color: transparent;
   color: whitesmoke;
-  /* border: 1px solid #031B28; */
   padding: 0.5rem 1rem;
   outline: none;
 }
@@ -112,13 +110,11 @@ body {
   color: skyblue;
 }
 
-
 #location-form button {
   padding: 0.83rem 1.78rem;
   border: 1px solid aliceblue;
   background-color: aliceblue;
   color: #00283d;
-  /* height: 1rem; */
   border-radius: 7px;
   font-size: 1rem;
   display: inline-block;
@@ -184,5 +180,3 @@ footer {
   justify-content: flex-start;
   align-items: flex-start;
 }
-
-
