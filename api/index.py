@@ -117,9 +117,12 @@ def generate_grid():
         'status': 'success'
     })
 
-# Convex hull algorithm moved to the frontend for visualization purposes
+# For Vercel's Python serverless function
+from http.server import BaseHTTPRequestHandler
 
-
-# Required for Vercel's Python serverless handler
+# Correct handler for Vercel serverless
 def handler(request, context):
-    return app(request.environ, start_response=context.start_response)
+    return app(request['headers'], start_response)
+
+def start_response(status, response_headers, exc_info=None):
+    return None
