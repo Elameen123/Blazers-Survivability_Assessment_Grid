@@ -9,7 +9,14 @@ from functools import wraps
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static')
+) 
+
 app.secret_key = os.getenv('FLASK_SECRET_KEY')
 
 # Initialize Firebase with credentials from environment variables
@@ -112,8 +119,6 @@ def generate_grid():
 
 # Convex hull algorithm moved to the frontend for visualization purposes
 
-# if __name__ == '__main__':
-#     app.run(debug=True)
 
 # Required for Vercel's Python serverless handler
 def handler(request, context):
