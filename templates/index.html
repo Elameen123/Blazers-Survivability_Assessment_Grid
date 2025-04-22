@@ -7,10 +7,11 @@
     <title>Survivability Assessment Grid</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
 </head>
 <body>
     <div id="headerContainer">
-        <img src="../Blazers-Logo.png" alt="blazers_logo" class="logo" id="logo"/>
+        <img id="logo" alt="blazers_logo" class="logo" />
         <h2>Survivability Assessment Grid</h2>
     </div>
 
@@ -59,71 +60,203 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
+        // Store auth token globally
+        let authToken = '';
+        
         // Check authentication immediately when page loads
         document.addEventListener('DOMContentLoaded', checkAuthentication);
         
         async function checkAuthentication() {
-            // Check if already authenticated
-            const authResponse = await fetch('/api/check-auth');
-            const authData = await authResponse.json();
-            
-            if (!authData.authenticated) {
-                // If not authenticated, prompt for organization name
-                const organizationName = prompt("Please enter your organization name:");
+            try {
+                // Check if already authenticated
+                const authResponse = await fetch('/api/check-auth');
+                const authData = await authResponse.json();
                 
-                if (organizationName) {
-                    // Try to login with provided organization name
-                    const loginResponse = await fetch('/api/login', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ organization: organizationName })
-                    });
+                if (!authData.authenticated) {
+                    // If not authenticated, prompt for organization name
+                    // Use a custom dialog instead of window.prompt to avoid issues when page is not focused
+                    const organizationName = prompt("Please enter your organization name:");
                     
-                    if (!loginResponse.ok) {
-                        alert("Invalid organization name. Access denied.");
+                    if (organizationName) {
+                        // Try to login with provided organization name
+                        const loginResponse = await fetch('/api/login', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ organization: organizationName })
+                        });
+                        
+                        if (!loginResponse.ok) {
+                            alert("Invalid organization name. Access denied.");
+                            // Prompt again after a brief pause
+                            setTimeout(checkAuthentication, 1000);
+                            return;
+                        }
+                        
+                        const loginData = await loginResponse.json();
+                        authToken = loginData.token;
+                        // Store token for future requests
+                        localStorage.setItem('authToken', authToken);
+                    } else {
+                        // If user cancels the prompt or enters nothing
+                        alert("Organization name is required for access.");
                         // Prompt again after a brief pause
                         setTimeout(checkAuthentication, 1000);
                         return;
                     }
-                } else {
-                    // If user cancels the prompt or enters nothing
-                    alert("Organization name is required for access.");
-                    // Prompt again after a brief pause
-                    setTimeout(checkAuthentication, 1000);
-                    return;
                 }
+                
+                // If we get here, user is authenticated - continue loading your app
+                loadApplicationData();
+            } catch (error) {
+                console.error("Authentication error:", error);
+                alert("Error during authentication. Please refresh the page to try again.");
             }
-            
-            // If we get here, user is authenticated - continue loading your app
-            loadApplicationData();
         }
         
         async function loadApplicationData() {
             try {
-                // Your existing code to load application data
-                // This will now work because the user is authenticated
-                const [logoResponse, samplesResponse, datasetResponse] = await Promise.all([
-                    fetch('/api/logo'),
-                    fetch('/api/samples'),
-                    fetch('/api/dataset')
-                ]);
+                // Retrieve token from storage if available
+                authToken = authToken || localStorage.getItem('authToken');
                 
-                if (!logoResponse.ok || !samplesResponse.ok || !datasetResponse.ok) {
-                    throw new Error('Failed to load data');
+                const headers = {
+                    'Auth-Token': authToken
+                };
+                
+                // Load logo
+                const logoResponse = await fetch('/api/logo', { headers });
+                if (logoResponse.ok) {
+                    const logoData = await logoResponse.json();
+                    const logoElement = document.getElementById('logo');
+                    logoElement.src = logoData.url;
+                } else {
+                    console.error('Failed to load logo');
                 }
                 
-                // Process your responses here
-                console.log('All data loaded successfully');
-                alert("Application loaded successfully!");
+                // Load samples
+                const samplesResponse = await fetch('/api/samples', { headers });
+                if (samplesResponse.ok) {
+                    const samplesData = await samplesResponse.json();
+                    // Process samples data here
+                    console.log('Samples loaded:', samplesData);
+                } else {
+                    console.error('Failed to load samples');
+                }
                 
-                // Continue with your application initialization
+                // Load dataset
+                const datasetResponse = await fetch('/api/dataset', { headers });
+                if (datasetResponse.ok) {
+                    const datasetData = await datasetResponse.json();
+                    // Process dataset data here
+                    console.log('Dataset loaded:', datasetData);
+                    
+                    // Populate table with data if available
+                    populateTable(datasetData);
+                } else {
+                    console.error('Failed to load dataset');
+                }
+                
+                console.log('Application loaded successfully');
+                initializeMap();
             } catch (error) {
                 console.error('Error loading application data:', error);
-                console.log("Error loading application data");
-                    alert("Error loading application data. Please refresh the page to try again.");
+                alert("Error loading application data. Please refresh the page to try again.");
             }
+        }
+        
+        function populateTable(data) {
+            if (!data || Object.keys(data).length === 0) {
+                console.log('No data available to populate table');
+                return;
+            }
+            
+            const tableBody = document.getElementById('table-body');
+            tableBody.innerHTML = '';
+            
+            // Assuming data is an object with rock entries
+            Object.entries(data).forEach(([key, rock]) => {
+                const row = document.createElement('tr');
+                
+                // Adjust these fields based on your actual data structure
+                row.innerHTML = `
+                    <td>${rock.name || key}</td>
+                    <td>${rock.type || 'N/A'}</td>
+                    <td>${rock.formation || 'N/A'}</td>
+                    <td>${rock.texture || 'N/A'}</td>
+                    <td>${rock.structure || 'N/A'}</td>
+                    <td>${rock.habitability || 'N/A'}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+        }
+        
+        function initializeMap() {
+            // Initialize map with default coordinates
+            const map = L.map('map').setView([6.48547, 3.85571], 13);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            
+            // Add marker for research location
+            const researchMarker = L.marker([6.48547, 3.85571]).addTo(map);
+            researchMarker.bindPopup("Research Location").openPopup();
+            
+            // Add marker for study area
+            const studyMarker = L.marker([6.48550, 3.85580]).addTo(map);
+            studyMarker.bindPopup("Study Area");
+            
+            // Handle form submission for grid generation
+            document.getElementById('location-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const researchLat = document.getElementById('location-lat').value;
+                const researchLng = document.getElementById('location-long').value;
+                const studyLat = document.getElementById('study-lat').value;
+                const studyLng = document.getElementById('study-long').value;
+                
+                // Update markers
+                researchMarker.setLatLng([researchLat, researchLng]);
+                studyMarker.setLatLng([studyLat, studyLng]);
+                
+                // Center map to show both points
+                const bounds = L.latLngBounds([
+                    [researchLat, researchLng],
+                    [studyLat, studyLng]
+                ]);
+                map.fitBounds(bounds.pad(0.1));
+                
+                try {
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        'Auth-Token': authToken
+                    };
+                    
+                    const response = await fetch('/api/generate_grid', {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify({
+                            researchLat,
+                            researchLng,
+                            studyLat,
+                            studyLng
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        alert('Grid generated successfully!');
+                        console.log('Grid data:', data);
+                    } else {
+                        alert('Failed to generate grid. Please try again.');
+                    }
+                } catch (error) {
+                    console.error('Error generating grid:', error);
+                    alert('Error generating grid. Please try again.');
+                }
+            });
         }
     </script>
 </body>
