@@ -17,15 +17,15 @@ body {
   background-color: rgb(165, 44, 0);
   color: white;
   width: 100%;
-  padding: 0.5rem;
+  padding: 1rem 0.65rem;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-around;
   position: relative;
 }
 
 .logo {
-  height: 60px;
+  height: 40px;
   position: absolute;
   left: 1rem;
   top: 50%;
@@ -33,7 +33,7 @@ body {
 }
 
 #headerContainer h2 {
-  font-size: 1.3rem;
+  font-size: 1rem;
   font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
   font-weight: bold;
   text-align: center;
@@ -59,6 +59,7 @@ body {
   width: 100%;
   padding: 0.5rem;
   background-color: #00283d;
+  align-items: center;
 }
 
 .location-information {
@@ -179,40 +180,31 @@ footer {
 
 /* Media Queries for Responsive Design */
 @media screen and (min-width: 768px) {
-  #location-form {
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-  }
+
+  #headerContainer {
+    padding: 1.3rem;
+    justify-content: center;
+}
+
+.logo {
+  height: 60px;
+}
 
   #headerContainer h2 {
     font-size: 1.8rem;
     padding-left: 7rem;
   }
   
-  .location-information {
-      width: 75%;
-      flex-direction: row;
-      align-items: stretch;
-      margin-bottom: 0;
-      margin-right: 0.5rem;
-  }
-  
-  .location-coordinate-1, .location-coordinate-2 {
-      width: 50%;
-      border-bottom: none;
-  }
-  
-  .location-coordinate-1 {
-      border-right: 1px solid #ddd;
-  }
-  
   #generateGrid {
-      width: 20%;
+      width: 30%;
   }
   
   #map {
       height: 400px;
+  }
+
+  #rock-table {
+    display: inline-table;
   }
 }
 
