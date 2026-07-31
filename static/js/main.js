@@ -1,29 +1,62 @@
 // static/js/main.js
 console.log("Main.js is loading...");
-document.addEventListener('DOMContentLoaded', function() {
-    // Check for existing authentication
-    checkAuthentication();
-    fetchLogo();
-        loadData();
-    
-    // Add event listeners
-    document.getElementById('generateGrid').addEventListener('click', function(e) {
+
+// Shared auth token for all API calls. SAG uses an org-level gate; when
+// launched from the Command Center we authenticate automatically so the
+// operator never sees a separate login. Token is attached to every fetch.
+let BZ_AUTH_TOKEN = null;
+
+function bzFetch(url, options = {}) {
+    const opts = { ...options, headers: { ...(options.headers || {}) } };
+    if (BZ_AUTH_TOKEN) opts.headers['Auth-Token'] = BZ_AUTH_TOKEN;
+    return fetch(url, opts);
+}
+
+async function ensureAuth() {
+    if (BZ_AUTH_TOKEN) return true;
+    try {
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // Org-level gate. Real per-user auth is the Command Center's job.
+            body: JSON.stringify({ organization: 'Blazers' })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            BZ_AUTH_TOKEN = data.token || 'blazers_auth_token';
+            window.BZ_AUTH_TOKEN = BZ_AUTH_TOKEN;
+            return true;
+        }
+    } catch (e) {
+        console.error('Auto-auth failed:', e);
+    }
+    return false;
+}
+
+document.addEventListener('DOMContentLoaded', async function() {
+    // Authenticate first, THEN load protected data — no more 401 cascade.
+    const ok = await ensureAuth();
+    if (!ok) {
+        showLoginForm();
+        return;
+    }
+    await fetchLogo();
+    await loadData();
+
+    document.getElementById('generateGrid').addEventListener('click', async function(e) {
         e.preventDefault();
-        generateGrid();
-        fetchLogo();
-        loadData();
+        await ensureAuth();
+        await generateGrid();
+        await loadData();
     });
 });
 
 // Authentication functions
 async function checkAuthentication() {
-    try {
-        // In a real app, check session validity from the server
-        await fetchLogo();
-        await loadData();
-    } catch (error) {
-        showLoginForm();
-    }
+    const ok = await ensureAuth();
+    if (!ok) { showLoginForm(); return; }
+    await fetchLogo();
+    await loadData();
 }
 
 function showLoginForm() {
@@ -32,34 +65,22 @@ function showLoginForm() {
     loginForm.innerHTML = `
         <div class="login-container">
             <h3>Login Required</h3>
-            <input type="email" id="email" placeholder="Email" value="lanre.mohammed23@gmail.com" />
-            <input type="password" id="password" placeholder="Password" value="••••••••" />
+            <input type="email" id="email" placeholder="Email" />
+            <input type="password" id="password" placeholder="Password" />
             <button id="login-button">Login</button>
         </div>
     `;
     document.body.appendChild(loginForm);
-    
+
     document.getElementById('login-button').addEventListener('click', async function() {
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-        await login(email, password);
+        await login();
     });
 }
 
-async function login(email, password) {
+async function login() {
     try {
-        const response = await fetch('/api/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ email, password })
-        });
-        
-        if (!response.ok) {
-            throw new Error('Authentication failed');
-        }
-        
+        const ok = await ensureAuth();
+        if (!ok) throw new Error('Authentication failed');
         document.querySelector('.login-modal')?.remove();
         await fetchLogo();
         await loadData();
@@ -70,7 +91,7 @@ async function login(email, password) {
 
 async function fetchLogo() {
     try {
-        const response = await fetch('/api/logo');
+        const response = await bzFetch('/api/logo');
         if (!response.ok) throw new Error('Failed to fetch logo');
         
         const data = await response.json();
@@ -89,8 +110,8 @@ let map = null;
 async function loadData() {
     try {
         const [samplesResponse, datasetResponse] = await Promise.all([
-            fetch('/api/samples'),
-            fetch('/api/dataset')
+            bzFetch(window.BZ_samplesUrl ? window.BZ_samplesUrl() : '/api/samples'),
+            bzFetch('/api/dataset')
         ]);
         
         if (!samplesResponse.ok || !datasetResponse.ok) {
@@ -185,7 +206,8 @@ async function generateGrid() {
     const studyLng = parseFloat(document.getElementById('study-long').value);
     
     try {
-        const response = await fetch('/api/generate_grid', {
+        const summary = computeHabitabilitySummary();
+        const response = await bzFetch('/api/generate_grid', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -194,7 +216,9 @@ async function generateGrid() {
                 researchLat,
                 researchLng,
                 studyLat,
-                studyLng
+                studyLng,
+                missionId: (window.BZ_MISSION && window.BZ_MISSION.id) || null,
+                summary
             })
         });
         
@@ -202,8 +226,13 @@ async function generateGrid() {
             throw new Error('Failed to generate grid');
         }
         
-        await response.json(); // Process any returned data
-        createMap(researchLat, researchLng, studyLat, studyLng);
+        const result = await response.json();
+        renderSummary(summary, result.persisted);
+        try {
+            createMap(researchLat, researchLng, studyLat, studyLng);
+        } catch (mapErr) {
+            console.error('Map render error (summary still saved):', mapErr);
+        }
     } catch (error) {
         console.error('Error generating grid:', error);
         alert('Failed to generate grid: ' + error.message);
@@ -377,4 +406,59 @@ function simplifyPath(points, tolerance) {
     } else {
         return [points[0], points[points.length - 1]];
     }
+}
+/* =====================================================================
+   BLAZERS additions: habitability summary (computed from the same data
+   the map uses) + on-page summary chips. The summary is what SAG sends
+   back to the mission so the Command Center can show the spatial verdict.
+   ===================================================================== */
+function computeHabitabilitySummary() {
+    const habitable = [];
+    let total = 0;
+    let sumLifeSupport = 0;
+    let countedLifeSupport = 0;
+
+    for (const sampleId in samples) {
+        const sample = samples[sampleId];
+        if (!sample.latitude || !sample.longitude) continue;
+        total++;
+        const matchingData = dataset.find(d =>
+            d.type && sample.type && d.type.toLowerCase() === sample.type.toLowerCase()
+        );
+        const pct = matchingData && matchingData.life_support_potential
+            ? matchingData.life_support_potential.percentage : null;
+        if (pct != null) { sumLifeSupport += pct; countedLifeSupport++; }
+        if (pct != null && pct >= 50) {
+            habitable.push([parseFloat(sample.latitude), parseFloat(sample.longitude)]);
+        }
+    }
+
+    let hull = [];
+    if (habitable.length >= 3) {
+        hull = simplifyPath(calculateConvexHull(habitable), 0.0001);
+    }
+
+    return {
+        totalSamples: total,
+        habitableCount: habitable.length,
+        avgLifeSupport: countedLifeSupport ? +(sumLifeSupport / countedLifeSupport).toFixed(1) : 0,
+        hull: hull,
+        generatedAt: Date.now()
+    };
+}
+
+function renderSummary(summary, persisted) {
+    const strip = document.getElementById('summary-strip');
+    if (!strip) return;
+    const okClass = summary.habitableCount > 0 ? 'ok' : '';
+    const note = summary.totalSamples === 0
+        ? '<div class="chip"><div class="k">Note</div><div class="v" style="font-size:12px;line-height:1.3;color:var(--ink-3)">No georeferenced samples — add lat/lng + rock type in IAS to map habitability.</div></div>'
+        : '';
+    strip.innerHTML = `
+        <div class="chip"><div class="k">Georeferenced</div><div class="v">${summary.totalSamples}</div></div>
+        <div class="chip ${okClass}"><div class="k">Habitable Zones</div><div class="v">${summary.habitableCount}</div></div>
+        <div class="chip"><div class="k">Avg Life Support</div><div class="v">${summary.avgLifeSupport}%</div></div>
+        ${persisted ? '<div class="chip ok"><div class="k">Synced</div><div class="v">✓</div></div>' : ''}
+        ${note}
+    `;
 }

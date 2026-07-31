@@ -1,346 +1,96 @@
-<!-- templates/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Survivability Assessment Grid</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blazers · Survivability Assessment Grid</title>
+
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <link rel="icon" href="/static/brand/logo-mark.svg" type="image/svg+xml">
+
+  <!-- Leaflet (unchanged — the grid/map logic depends on it) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <link rel="stylesheet" href="/static/css/index.css">
 </head>
 <body>
+  <div id="app">
+
+    <!-- Thin vertical chevron stripe gutters (SAG-approved, fixed to viewport
+         so they never add to document height / force scroll) -->
+    <div class="bz-gutter bz-gutter-left" aria-hidden="true"></div>
+    <div class="bz-gutter bz-gutter-right" id="bz-gutter-right" aria-hidden="true"></div>
+
+    <!-- Header -->
     <div id="headerContainer">
-        <img id="logo" alt="blazers_logo" class="logo" />
-        <h2>Survivability Assessment Grid</h2>
+      <img id="logo" src="/static/brand/logo-mark.svg" alt="Blazers" />
+      <h1>Survivability Assessment Grid</h1>
     </div>
 
+    <!-- Main: controls + table (left) | map (right) -->
     <div id="main">
-        <div id="formMapContainer">
-            <form id="location-form">
-                <div class="location-information">
-                    <div class="location-coordinate-1">
-                        <h4>Research Location</h4>
-                        <input type="text" id="location-lat" name="location" value="6.48547" placeholder="Location Latitude">
-                        <input type="text" id="location-long" name="location" value="3.85571" placeholder="Location Longitude">
-                    </div>
 
-                    <div class="location-coordinate-2">
-                        <h4>Study Area</h4>
-                        <input type="text" id="study-lat" name="location" value="6.48550" placeholder="Study_Area-Latitude">
-                        <input type="text" id="study-long" name="location" value="3.85580" placeholder="Study_Area-Longitude">
-                    </div>
-                </div>
-                
-                <button id="generateGrid" type="submit">Generate Grid</button>
-            </form>
-    
-            <div id="map"></div>
+      <!-- LEFT COLUMN: coordinate controls (fixed height) + table (fills rest) -->
+      <div id="left-col">
+
+        <!-- Coordinate controls -->
+        <div class="panel" id="coord-panel">
+          <h3>Survey Coordinates</h3>
+          <form class="coord-form" onsubmit="return false;">
+            <label>Research Location</label>
+            <div class="coord-grid">
+              <input type="text" id="location-lat" placeholder="Latitude" />
+              <input type="text" id="location-long" placeholder="Longitude" />
+            </div>
+            <label>Study Area</label>
+            <div class="coord-grid">
+              <input type="text" id="study-lat" placeholder="Latitude" />
+              <input type="text" id="study-long" placeholder="Longitude" />
+            </div>
+            <button id="generateGrid" type="button">Generate Grid</button>
+          </form>
+
+          <!-- Habitability summary chips (filled after grid generation) -->
+          <div id="summary-strip"></div>
         </div>
 
-        <table id="rock-table">
-            <thead>
+        <!-- Sample table (fills remaining left-column height; scrolls internally) -->
+        <div class="panel" id="table-panel">
+          <h3>Sample Habitability</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
                 <tr>
-                    <th>Rock Name</th>
-                    <th>Rock Type</th>
-                    <th>Formation Process</th>
-                    <th>Texture</th>
-                    <th>Structure</th>
-                    <th>Habitability Support</th>
+                  <th>Sample</th><th>Type</th><th>Formation</th>
+                  <th>Texture</th><th>Structure</th><th>Life Support</th>
                 </tr>
-            </thead>
-            <tbody id="table-body">
-            </tbody>
-        </table>    
+              </thead>
+              <tbody id="table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Map -->
+      <div class="panel" id="map-panel">
+        <div id="map"></div>
+      </div>
     </div>
 
-    <footer>&copy; 2024 Blazers Software Team. All Rights Reserved</footer>
+    <!-- Footer chevron band (compact, fixed height, never grows) -->
+    <footer id="bz-footer">
+      <div class="bz-chevron"></div>
+      <div class="bz-foot-text">
+        <span>BLAZERS · SURVIVABILITY ASSESSMENT GRID</span>
+        <span>&copy; 2026 Blazers Software Team</span>
+      </div>
+    </footer>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    <script>
-        // Store auth token globally
-        let authToken = '';
-        // Map variable to keep track of the map instance
-        let map = null;
-        let mapInitialized = false;
-        
-        // Check authentication immediately when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            // Wait for DOM to be fully loaded before authentication
-            setTimeout(checkAuthentication, 100);
-        });
-        
-        async function checkAuthentication() {
-            try {
-                // Check if already authenticated
-                const authResponse = await fetch('/api/check-auth');
-                const authData = await authResponse.json();
-                
-                if (!authData.authenticated) {
-                    // Get token from storage first
-                    authToken = localStorage.getItem('authToken');
-                    
-                    // If no valid token, prompt for organization name
-                    if (!authToken) {
-                        loginWithPrompt();
-                    } else {
-                        // Verify the stored token
-                        const verifyResponse = await fetch('/api/check-auth', {
-                            headers: { 'Auth-Token': authToken }
-                        });
-                        const verifyData = await verifyResponse.json();
-                        
-                        if (!verifyData.authenticated) {
-                            // Token invalid, prompt for login
-                            loginWithPrompt();
-                        } else {
-                            // Token valid, load data
-                            loadApplicationData();
-                        }
-                    }
-                } else {
-                    // Already authenticated through session
-                    loadApplicationData();
-                }
-            } catch (error) {
-                console.error("Authentication error:", error);
-                alert("Error during authentication. Please refresh the page to try again.");
-            }
-        }
-        
-        function loginWithPrompt() {
-            // If not authenticated, prompt for organization name
-            const organizationName = prompt("Please enter your organization name:");
-            
-            if (organizationName) {
-                // Try to login with provided organization name
-                fetch('/api/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ organization: organizationName })
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Login failed');
-                    }
-                    return response.json();
-                })
-                .then(loginData => {
-                    authToken = loginData.token;
-                    // Store token for future requests
-                    localStorage.setItem('authToken', authToken);
-                    // Load application data
-                    loadApplicationData();
-                })
-                .catch(error => {
-                    console.error("Login error:", error);
-                    alert("Invalid organization name. Access denied.");
-                    // Prompt again after a brief pause
-                    setTimeout(loginWithPrompt, 500);
-                });
-            } else {
-                // If user cancels the prompt or enters nothing
-                alert("Organization name is required for access.");
-                // Prompt again after a brief pause
-                setTimeout(loginWithPrompt, 500);
-            }
-        }
-        
-        async function loadApplicationData() {
-            try {
-                // Retrieve token from storage if available
-                authToken = authToken || localStorage.getItem('authToken');
-                
-                const headers = {
-                    'Auth-Token': authToken
-                };
-                
-                // Load logo
-                try {
-                    const logoResponse = await fetch('/api/logo', { headers });
-                    if (logoResponse.ok) {
-                        const logoData = await logoResponse.json();
-                        const logoElement = document.getElementById('logo');
-                        logoElement.src = logoData.url;
-                    } else {
-                        console.error('Failed to load logo');
-                    }
-                } catch (e) {
-                    console.error('Error loading logo:', e);
-                }
-                
-                // Load samples
-                try {
-                    const samplesResponse = await fetch('/api/samples', { headers });
-                    if (samplesResponse.ok) {
-                        const samplesData = await samplesResponse.json();
-                        // Process samples data here
-                        console.log('Samples loaded:', samplesData);
-                    } else {
-                        console.error('Failed to load samples');
-                    }
-                } catch (e) {
-                    console.error('Error loading samples:', e);
-                }
-                
-                // Load dataset
-                try {
-                    const datasetResponse = await fetch('/api/dataset', { headers });
-                    if (datasetResponse.ok) {
-                        const datasetData = await datasetResponse.json();
-                        // Process dataset data here
-                        console.log('Dataset loaded:', datasetData);
-                        
-                        // Populate table with data if available
-                        populateTable(datasetData);
-                    } else {
-                        console.error('Failed to load dataset');
-                    }
-                } catch (e) {
-                    console.error('Error loading dataset:', e);
-                }
-                
-                console.log('Application loaded successfully');
-                // Only initialize map if not already initialized
-                if (!mapInitialized) {
-                    initializeMap();
-                }
-            } catch (error) {
-                console.error('Error loading application data:', error);
-                alert("Error loading application data. Please refresh the page to try again.");
-            }
-        }
-        
-        function populateTable(data) {
-            if (!data || Object.keys(data).length === 0) {
-                console.log('No data available to populate table');
-                return;
-            }
-            
-            const tableBody = document.getElementById('table-body');
-            tableBody.innerHTML = '';
-            
-            // Assuming data is an object with rock entries
-            Object.entries(data).forEach(([key, rock]) => {
-                const row = document.createElement('tr');
-                
-                // Parse habitability value as number if it's a string with percentage
-                let habitabilityValue = rock.habitability;
-                if (typeof habitabilityValue === 'string') {
-                    habitabilityValue = parseInt(habitabilityValue.replace('%', ''), 10);
-                } else if (rock.life_support_potential && rock.life_support_potential.percentage) {
-                    habitabilityValue = rock.life_support_potential.percentage;
-                }
-                
-                // Determine color based on habitability value
-                const habitabilityColor = (habitabilityValue >= 50) ? 'green' : 'red';
-                
-                // Create the habitability cell with appropriate styling
-                const habitabilityCell = `<td style="color: ${habitabilityColor}">
-                    ${habitabilityValue}%
-                </td>`;
-                
-                // Adjust these fields based on your actual data structure
-                row.innerHTML = `
-                    <td>${rock.name || rock.type || key}</td>
-                    <td>${rock.type || 'N/A'}</td>
-                    <td>${rock.formation_process || 'N/A'}</td>
-                    <td>${rock.texture || 'N/A'}</td>
-                    <td>${rock.structure || 'N/A'}</td>
-                    ${habitabilityCell}
-                `;
-                
-                tableBody.appendChild(row);
-            });
-        }
-        
-        function initializeMap() {
-            // Check if map is already initialized
-            if (mapInitialized) {
-                console.log('Map already initialized');
-                return;
-            }
-            
-            // Set the flag before initialization to prevent race conditions
-            mapInitialized = true;
-            
-            try {
-                console.log('Initializing map...');
-                // Initialize map with default coordinates
-                map = L.map('map').setView([6.48547, 3.85571], 13);
-                
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                }).addTo(map);
-                
-                // Add marker for research location
-                const researchMarker = L.marker([6.48547, 3.85571]).addTo(map);
-                researchMarker.bindPopup("Research Location").openPopup();
-                
-                // Add marker for study area
-                const studyMarker = L.marker([6.48550, 3.85580]).addTo(map);
-                studyMarker.bindPopup("Study Area");
-                
-                // Handle form submission for grid generation
-                document.getElementById('location-form').addEventListener('submit', async function(e) {
-                    e.preventDefault();
-                    
-                    const researchLat = document.getElementById('location-lat').value;
-                    const researchLng = document.getElementById('location-long').value;
-                    const studyLat = document.getElementById('study-lat').value;
-                    const studyLng = document.getElementById('study-long').value;
-                    
-                    // Update markers
-                    researchMarker.setLatLng([researchLat, researchLng]);
-                    studyMarker.setLatLng([studyLat, studyLng]);
-                    
-                    // Center map to show both points
-                    const bounds = L.latLngBounds([
-                        [researchLat, researchLng],
-                        [studyLat, studyLng]
-                    ]);
-                    map.fitBounds(bounds.pad(0.1));
-                    
-                    try {
-                        const headers = {
-                            'Content-Type': 'application/json',
-                            'Auth-Token': authToken
-                        };
-                        
-                        const response = await fetch('/api/generate_grid', {
-                            method: 'POST',
-                            headers: headers,
-                            body: JSON.stringify({
-                                researchLat,
-                                researchLng,
-                                studyLat,
-                                studyLng
-                            })
-                        });
-                        
-                        if (response.ok) {
-                            const data = await response.json();
-                            alert('Grid generated successfully!');
-                            console.log('Grid data:', data);
-                        } else {
-                            alert('Failed to generate grid. Please try again.');
-                        }
-                    } catch (error) {
-                        console.error('Error generating grid:', error);
-                        alert('Error generating grid. Please try again.');
-                    }
-                });
-                
-                console.log('Map initialized successfully');
-            } catch (error) {
-                console.error('Error initializing map:', error);
-                mapInitialized = false; // Reset flag so initialization can be attempted again
-            }
-        }
-    </script>
+  </div>
+
+  <script src="/static/js/mission-context.js"></script>
+  <script src="/static/js/main.js"></script>
 </body>
 </html>
